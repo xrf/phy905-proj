@@ -1,0 +1,115 @@
+\documentclass[fleqn, 12pt]{article}
+\usepackage[0.7, swapVarGreek]{sigilz}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{subdepth}
+
+\setlength{\headheight}{15pt}
+\pagestyle{fancy}
+\lhead{Fei Yuan}
+\chead{PHY905-004}
+\rhead{Project proposal}
+\marginparsep=2cm
+
+\begin{document}
+
+\title{Project proposal: distributed block-diagonal many-body tensors}
+\date{2016-03-14}
+\author{Fei Yuan}
+\maketitle
+
+\section{Background}
+
+In various methods of quantum many-body theory, tensor \textit{contractions} form the bulk of the calculation and therefore determine the performance of the overall algorithm.  For this project, I will focus on a particular contraction found in the in-medium similarity renormalization group (IM-SRG) method, which can be abstractly written as:
+\begin{align}
+  C_{i, j, k, l}
+  &= \sum_{m = M_1}^{M_2} \sum_{n = N_1}^{N_2} A_{i, n, m, l} B_{m, j, k, n}
+    \label{eq:a}
+\end{align}
+where $\bm A$, $\bm B$, and $\bm C$ are multi-dimensional arrays (\textit{tensors}, in a loose sense) and $M_1$, $M_2$, $N_1$, and $N_2$ are some integers.
+
+A naive implementation of this equation would be an easy but boring exercise.  However, this is too impractical for realistic problems as the storage requirements for such tensors (where each individual index may run up to $10^3$) would exceed terabytes.
+
+To reduce the computational cost, it is necessary to exploit the additional structure present in the tensors.  For this problem I will make use of two specific properties (these apply to $\bm A$ and $\bm B$ as well):
+\begin{enumerate}
+\item From the Pauli exclusion principle, the tensors are antisymmetric under exchange of the first two and last two indices:
+  \begin{align*}
+    C_{i, j, k, l} = -C_{j, i, k, l} = C_{j, i, l, k} = -C_{i, j, l, k}
+  \end{align*}
+  This can reduce the storage requirements by a factor of 4, approximately.
+\item Conservation laws in the quantum system produce a kind of block-diagonal structure in the matrix:
+  \begin{align*}
+    C_{i, j, k, l} = \delta_{\bm \Lambda(i) + \bm \Lambda(j), \bm \Lambda(k) + \bm \Lambda(l)} C_{i, j, k, l}
+  \end{align*}
+  for some vector-valued function $\bm \Lambda$.
+\end{enumerate}
+Taking both into account, one can rewrite a tensor $\bm C$ as a set of tensors $\{ \bm c^{(\lambda)} \mid \lambda \}$:
+\begin{align*}
+  C_{i, j, k, l} = \delta_{\bm \Lambda(i) + \bm \Lambda(j), \bm \Lambda(k) + \bm \Lambda(l)}
+  \sgn(i - j) \sgn(k - l) c^{(\bm \Lambda(i) + \bm \Lambda(j))}_{B(i, j), B(k, l)}
+\end{align*}
+where
+\begin{align*}
+  B(i, j) = \binom{\max(i, j)}{2} + \min(i, j)
+\end{align*}
+This is the \textit{standard form} of such a rank-2 many-body tensor, and each tensor $\bm c^{(\lambda)}$ will be referred to as a \textit{block}.  Both the input and output tensors are expected in this format, which works well for most other contractions.
+
+However, for \emph{this} particular summation \eqref{a} it is better to rewrite it as:
+\begin{align*}
+  C_{i, j, k, l} = \tilde C_{i, l, k, j}
+  = \delta_{\bm \Lambda(i) - \bm \Lambda(l), \bm \Lambda(k) - \bm \Lambda(j)}
+  \sgn(i - l) \sgn(k - j) \tilde c^{(\bm \Lambda(i) - \bm \Lambda(l))}_{B(i, l), B(k, j)}
+\end{align*}
+This is the \textit{cross-coupled form}.  The contraction can then be written as a set of matrix multiplications:
+\begin{align*}
+  \tilde{\bm c}^{(\tilde \lambda)} = \tilde{\bm a}^{(\tilde \lambda)} \tilde{\bm b}^{(\tilde \lambda)}
+\end{align*}
+The matrix multiplication is actually the simpler part, since it can be off-loaded to an optimized library routine.   The main difficulty lies in implementing an efficient \textit{transposition} of a tensor in standard form $\{ \bm c^{(\lambda)} \mid \lambda \}$ into a tensor in cross-coupled form $\{ \tilde{\bm c}^{(\tilde \lambda)} \mid \tilde \lambda \}$ and back.
+
+\section{Goals}
+
+I would like to investigate the performance of a tensor transposition routine that transforms a rank-2 many-body tensor from the standard form into the cross-coupled form as well as the inverse.
+
+In particular, I would like to compare and analyze two specific cases: (1) using a sequential algorithm where all the blocks reside on a single node, and (2) using a parallel algorithm on a distributed memory system where the blocks are to distributed as evenly as possible across the nodes for load-balancing.
+
+It is possible that cache-misses would reduce the efficiency of the algorithm for large inputs.  I could investigate if there is some analogous way of blocking the tensor transposition.
+
+If there is time, I can work on implementing the distributed matrix multiplication part and compare the relative importance of the transposition against that of the multiplication as input size changes.
+
+Another idea would be to compare the performance of doing this contraction using in the aforementioned domain-specific algorithm against one using a generic sparse tensor contraction library.
+
+\section{Source code}
+
+The source code for the tensor transposition routine exists for the sequential case as part of the program I develop for my research.  There is no code for the distributed case.
+
+The transposition is tightly coupled with the rest of the program and thus difficult to analyze as a standalone operation, thus I will extract the relevant parts necessary for this project, and then extend it using OpenMPI to support the distributed case.
+
+The code will eventually be posted at: \url{https://github.com/xrf/phy905-proj}
+
+\section{Baseline}
+
+The baseline performance is determined by that of the sequential case.
+
+I intend to run and benchmark the code using the MSU HPC cluster.
+
+For the inputs, the block diagonal nature of the tensor will be emulated using a physical conservation law: a combination of linear momentum conservation in 3D, spin conservation, and isospin conservation.  This provides a realistic model of the block sizes as well as how the elements in the blocks relate to each other.  The contents of the tensors themselves will be filled with random values satisfying the two properties mentioned in Background.  The input size will be varied by changing the number of states in the basis.
+
+The timing measurements will taken in the usual manner as done in the past few homeworks (wall-clock time).  The results will be shown via the effective data transfer rate.
+
+\section{Analysis}
+
+The transposition operation consists mainly of data transfer, although the index manipulation is a bit more complex than a simple matrix transpose.  It is possible to model the operation based on the known memory bandwidth and, in the distributed case, the bandwidth of the interconnects.
+
+One can improve upon this model by adding the effects of cache-misses, which could become significant as the inputs become large.
+
+\section{Outcome}
+
+The hopeful outcome is that the distributed algorithm will prove to be at least as, if not more, performant than the sequential algorithm.  In this case, it would make sense to make similar changes to the remaining parts of the codebase that contribute significantly to the overall performance.
+
+Nonetheless, even if the distributed algorithm is somewhat slower, it may still be worthwhile to keep it as an option, since it can significantly reduce the memory required per node for large calculations.  Resource-wise, it is generally more costly to do a calculation on a single node with a large amount of memory than to do the same on $N$ nodes using roughly $1/N$-th of the memory.
+
+\section{Comparison}
+
+The comparison will be done largely with plots of the effective data transfer rate as a function of the input size.  I also will explore how the performance varies as more and more nodes are added.
+
+\end{document}
