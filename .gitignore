@@ -1,3 +1,5 @@
+src/phy905proj
+
 # generic
 .#*
 \#*#
@@ -7,6 +9,25 @@ dist/
 *~
 *.log
 *.tmp
+
+# Autotools
+.deps/
+Makefile
+Makefile.in
+aclocal.m4
+autom4te.cache/
+compile
+config.guess
+config.h
+config.h.in
+config.status
+config.sub
+configure
+configure.scan
+depcomp
+install-sh
+missing
+stamp-h1
 
 # native
 a.out
